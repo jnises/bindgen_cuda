@@ -544,7 +544,7 @@ fn compute_cap() -> Result<usize, Error> {
     Ok(compute_cap)
 }
 
-/// Returns an iteartor over the environment variables needed to run the MSVC toolchain.
+/// Returns an iterator over the environment variables needed to run the MSVC toolchain.
 /// Use these when starting processes to make us behave as if called from a VS developer command prompt.
 /// Returns an empty iterator if not msvc
 fn msvc_env() -> impl Iterator<Item = (&'static OsStr, &'static OsStr)> {
