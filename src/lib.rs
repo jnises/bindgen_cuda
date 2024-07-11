@@ -551,9 +551,7 @@ fn msvc_env() -> impl Iterator<Item = (&'static OsStr, &'static OsStr)> {
     static MEMOIZED: OnceLock<Vec<(OsString, OsString)>> = OnceLock::new();
     MEMOIZED
         .get_or_init(|| {
-            if !cfg!(target_env = "msvc") {
-                return Vec::new();
-            }
+            // this returns None if not msvc
             let cl_tool = cc::windows_registry::find_tool(
                 &std::env::var("TARGET").expect("TARGET env var"),
                 "cl.exe",
