@@ -2,10 +2,12 @@
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 use rayon::prelude::*;
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::{OsStr, OsString};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 /// Error messages
 #[derive(Debug)]
@@ -248,6 +250,7 @@ impl Builder {
                     .args(["-o", obj_file.to_str().expect("valid outfile")])
                     .args(["--default-stream", "per-thread"])
                     .args(&self.extra_args);
+                command.envs(msvc_env());
                 if let Ok(ccbin_path) = &ccbin_env {
                     command
                         .arg("-allow-unsupported-compiler")
@@ -278,6 +281,7 @@ impl Builder {
                     out_file.to_str().expect("library file {out_file} to exist"),
                 ])
                 .args(obj_files);
+            command.envs(msvc_env());
             let output = command
                 .spawn()
                 .expect("failed spawning nvcc")
@@ -373,6 +377,7 @@ impl Builder {
                             .args(["-ccbin", ccbin_path]);
                     }
                     command.arg(p);
+                    command.envs(msvc_env());
                     Some((p, format!("{command:?}"), command.spawn()
                         .expect("nvcc failed to start. Ensure that you have CUDA installed and that `nvcc` is in your PATH.").wait_with_output()))
                 }
@@ -485,6 +490,7 @@ fn compute_cap() -> Result<usize, Error> {
         let out = std::process::Command::new("nvidia-smi")
                 .arg("--query-gpu=compute_cap")
                 .arg("--format=csv")
+                .envs(msvc_env())
                 .output()
                 .expect("`nvidia-smi` failed. Ensure that you have CUDA installed and that `nvidia-smi` is in your PATH.");
         let out = std::str::from_utf8(&out.stdout).expect("stdout is not a utf8 string");
@@ -503,6 +509,7 @@ fn compute_cap() -> Result<usize, Error> {
     let (supported_nvcc_codes, max_nvcc_code) = {
         let out = std::process::Command::new("nvcc")
                 .arg("--list-gpu-code")
+                .envs(msvc_env())
                 .output()
                 .expect("`nvcc` failed. Ensure that you have CUDA installed and that `nvcc` is in your PATH.");
         let out = std::str::from_utf8(&out.stdout).expect("valid utf-8 nvcc output");
@@ -535,4 +542,24 @@ fn compute_cap() -> Result<usize, Error> {
     }
 
     Ok(compute_cap)
+}
+
+/// Returns an iteartor over the environment variables needed to run the MSVC toolchain.
+/// Use these when starting processes to make us behave as if called from a VS developer command prompt.
+/// Returns an empty iterator if not msvc
+fn msvc_env() -> impl Iterator<Item = (&'static OsStr, &'static OsStr)> {
+    static MEMOIZED: OnceLock<Vec<(OsString, OsString)>> = OnceLock::new();
+    MEMOIZED
+        .get_or_init(|| {
+            if !cfg!(target_env = "msvc") {
+                return Vec::new();
+            }
+            let cl_tool = cc::windows_registry::find_tool(
+                &std::env::var("TARGET").expect("TARGET env var"),
+                "cl.exe",
+            );
+            cl_tool.map(|cl| cl.env().to_vec()).unwrap_or_default()
+        })
+        .iter()
+        .map(|(k, v)| (k.as_os_str(), v.as_os_str()))
 }
